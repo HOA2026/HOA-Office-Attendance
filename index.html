@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Office Attendance Portal</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --success: #16a34a;
+            --danger: #dc2626;
+            --bg: #f8fafc;
+            --text: #1e293b;
+        }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; display: flex; justify-content: center; }
+        .card { width: 100%; max-width: 500px; background: white; padding: 30px; border-radius: 16px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); margin-bottom: 30px; }
+        h2 { text-align: center; color: var(--primary); margin-top: 0; }
+        label { display: block; font-weight: 600; margin-bottom: 8px; margin-top: 15px; }
+        select, input { width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
+        .btn-group { display: flex; gap: 15px; margin-top: 25px; }
+        button { flex: 1; padding: 14px; border: none; border-radius: 8px; color: white; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        button:disabled { background-color: #cbd5e1 !important; cursor: not-allowed; }
+        .btn-in { background: var(--success); }
+        .btn-out { background: var(--danger); }
+        .admin-section { border-top: 2px dashed #e2e8f0; margin-top: 30px; padding-top: 20px; }
+        .btn-admin { background: #64748b; width: 100%; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: left; font-size: 14px; }
+        th { background: #f1f5f9; }
+        .hidden { display: none; }
+        #statusMessage { text-align: center; font-weight: bold; margin-top: 15px; }
+    </style>
+</head>
+<body>
+
+<div style="width: 100%; max-width: 500px;">
+    <div class="card">
+        <h2>Office Attendance</h2>
+        <p style="text-align: center; color: #64748b; font-size: 14px;">Must be within 50 meters of the office to register.</p>
+        
+        <label for="employeeSelect">Select Your Name:</label>
+        <select id="employeeSelect">
+            <option value="">-- Choose Name --</option>
+            <option value="Ahmed reza">Ahmed reza</option>
+            <option value="Kazi Tipu">Kazi Tipu</option>
+            <option value="Rajon Hasan">Rajon Hasan</option>
+            <option value="Rayhan">Rayhan</option>
+            <option value="Sadia Shikder">Sadia Shikder</option>
+            <option value="Sazzad Rajon">Sazzad Rajon</option>
+            <option value="Shamima Humaira">Shamima Humaira</option>
+            <option value="Tanzila Elma">Tanzila Elma</option>
+            <option value="Tonmoy">Tonmoy</option>
+        </select>
+
+        <div class="btn-group">
+            <button class="btn-in" onclick="processAttendance('Clock In')">Clock In</button>
+            <button class="btn-out" onclick="processAttendance('Clock Out')">Clock Out</button>
+        </div>
+        
+        <div id="statusMessage"></div>
+    </div>
+
+    <div class="card admin-section">
+        <h3>Admin Dashboard</h3>
+        <div id="adminAuth">
+            <input type="password" id="passcode" placeholder="Enter Admin Passcode">
+            <button class="btn-admin" style="margin-top:10px;" onclick="checkPasscode()">Access Logs</button>
+        </div>
+        
+        <div id="adminData" class="hidden">
+            <button onclick="fetchLogs()" style="background:#2563eb; margin-bottom:15px;">Refresh Logs</button>
+            <div style="max-height: 300px; overflow-y: auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Action</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Config Variables
+    const OFFICE_LAT = 23.809309477995882;
+    const OFFICE_LON = 90.420026467482;
+    const MAX_DISTANCE_METERS = 50; // Allowed radius
+    const ADMIN_PASSCODE = "9008";
+    
+    // REPLACE THIS WITH YOUR DEPLOYED GOOGLE WEB APP URL
+    const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbz0oaMHr2DSf7P-jPXx6eKhyXVdC589ZvU4icKhOBRknFzeGAKrQ8G6CU3j7LcZKyH1/exec';
+
+    // Haversine Formula to calculate distance between two coordinates
+    function getDistance(lat1, lon1, lat2, lon2) {
+        const R = 6371e3; // Earth radius in meters
+        const phi1 = lat1 * Math.PI/180;
+        const phi2 = lat2 * Math.PI/180;
+        const deltaPhi = (lat2-lat1) * Math.PI/180;
+        const deltaLambda = (lon2-lon1) * Math.PI/180;
+
+        const a = Math.sin(deltaPhi/2) * Math.sin(deltaPhi/2) +
+                  Math.cos(phi1) * Math.cos(phi2) *
+                  Math.sin(deltaLambda/2) * Math.sin(deltaLambda/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+        return R * c; 
+    }
+
+    function processAttendance(action) {
+        const name = document.getElementById('employeeSelect').value;
+        const msgDiv = document.getElementById('statusMessage');
+        
+        if (!name) {
+            updateStatus('Please select your name.', 'var(--danger)');
+            return;
+        }
+
+        updateStatus('Verifying office location...', 'orange');
+
+        if (!navigator.geolocation) {
+            updateStatus('Geolocation is not supported by your browser.', 'var(--danger)');
+            return;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                const userLat = position.coords.latitude;
+                const userLon = position.coords.longitude;
+                const distance = getDistance(userLat, userLon, OFFICE_LAT, OFFICE_LON);
+
+                if (distance <= MAX_DISTANCE_METERS) {
+                    sendToGoogleSheets(name, action);
+                } else {
+                    updateStatus(`Access Denied. You are outside the office radius. (${Math.round(distance)}m away)`, 'var(--danger)');
+                }
+            },
+            (error) => {
+                updateStatus('Location access denied. Please enable GPS location access.', 'var(--danger)');
+            },
+            { enableHighAccuracy: true }
+        );
+    }
+
+    function sendToGoogleSheets(name, action) {
+        updateStatus('Recording to dashboard...', 'orange');
+        
+        fetch(WEB_APP_URL, {
+            method: 'POST',
+            mode: 'no-cors', // Solves cross-origin restriction for simple text streams
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name, action: action })
+        })
+        .then(() => {
+            updateStatus(`Success! ${action} recorded.`, 'var(--success)');
+            document.getElementById('employeeSelect').value = "";
+        })
+        .catch(err => {
+            updateStatus('Submission failed. Try again.', 'var(--danger)');
+            console.error(err);
+        });
+    }
+
+    function updateStatus(text, color) {
+        const msgDiv = document.getElementById('statusMessage');
+        msgDiv.innerText = text;
+        msgDiv.style.color = color;
+    }
+
+    // Admin Panel logic
+    function checkPasscode() {
+        const code = document.getElementById('passcode').value;
+        if (code === ADMIN_PASSCODE) {
+            document.getElementById('adminAuth').classList.add('hidden');
+            document.getElementById('adminData').classList.remove('hidden');
+            fetchLogs();
+        } else {
+            alert('Incorrect passcode!');
+        }
+    }
+
+    function fetchLogs() {
+        const tableBody = document.getElementById('logTableBody');
+        tableBody.innerHTML = "<tr><td colspan='3'>Loading database logs...</td></tr>";
+
+        fetch(WEB_APP_URL)
+        .then(res => res.json())
+        .then(data => {
+            tableBody.innerHTML = "";
+            // Reverse so newest logs are at the top
+            data.reverse().forEach(log => {
+                let formattedTime = new Date(log.timestamp).toLocaleString();
+                tableBody.innerHTML += `<tr>
+                    <td><b>${log.name}</b></td>
+                    <td>${log.action}</td>
+                    <td>${formattedTime}</td>
+                </tr>`;
+            });
+        })
+        .catch(err => {
+            tableBody.innerHTML = "<tr><td colspan='3'>Failed to retrieve data.</td></tr>";
+        });
+    }
+</script>
+</body>
+</html>
