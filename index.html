@@ -32,7 +32,6 @@
     </style>
 </head>
 <body>
-
 <div style="width: 100%; max-width: 500px;">
     <div class="card">
         <h2>Office Attendance</h2>
@@ -51,7 +50,6 @@
             <option value="Tanzila Elma">Tanzila Elma</option>
             <option value="Tonmoy">Tonmoy</option>
         </select>
-
         <div class="btn-group">
             <button class="btn-in" onclick="processAttendance('Clock In')">Clock In</button>
             <button class="btn-out" onclick="processAttendance('Clock Out')">Clock Out</button>
@@ -59,7 +57,6 @@
         
         <div id="statusMessage"></div>
     </div>
-
     <div class="card admin-section">
         <h3>Admin Dashboard</h3>
         <div id="adminAuth">
@@ -84,7 +81,6 @@
         </div>
     </div>
 </div>
-
 <script>
     // Config Variables
     const OFFICE_LAT = 23.809309477995882;
@@ -93,7 +89,22 @@
     const ADMIN_PASSCODE = "9008";
     
     // REPLACE THIS WITH YOUR DEPLOYED GOOGLE WEB APP URL
-    const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyvwmpG4VKlukOPPBqsT-NF0I-tAfFNeiVZ3sBrcmo7VGvuvnRAF0CwstjgcUuT1Itr/exec';
+    const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycby9B9v0JJu_j-MjoRaiWK7jK52waCcLsxgLTkudL7OzqDit9n_ro9-9uEnTzPJDofluBA/exec';
+
+    // ---- Device ID ----
+    // Persistent random ID stored in this browser's localStorage.
+    // IMPORTANT: this identifies the BROWSER/PROFILE, not the physical
+    // hardware. Clearing site data, using a different browser, or an
+    // incognito window will produce a new ID. This is a deterrent against
+    // casual "clock in for me too" sharing, not an unbeatable lock.
+    function getDeviceId() {
+        let id = localStorage.getItem('attendance_device_id');
+        if (!id) {
+            id = 'dev-' + (crypto.randomUUID ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(16).slice(2)));
+            localStorage.setItem('attendance_device_id', id);
+        }
+        return id;
+    }
 
     // Haversine Formula to calculate distance between two coordinates
     function getDistance(lat1, lon1, lat2, lon2) {
@@ -102,15 +113,12 @@
         const phi2 = lat2 * Math.PI/180;
         const deltaPhi = (lat2-lat1) * Math.PI/180;
         const deltaLambda = (lon2-lon1) * Math.PI/180;
-
         const a = Math.sin(deltaPhi/2) * Math.sin(deltaPhi/2) +
                   Math.cos(phi1) * Math.cos(phi2) *
                   Math.sin(deltaLambda/2) * Math.sin(deltaLambda/2);
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-
         return R * c; 
     }
-
     function processAttendance(action) {
         const name = document.getElementById('employeeSelect').value;
         const msgDiv = document.getElementById('statusMessage');
@@ -119,20 +127,16 @@
             updateStatus('Please select your name.', 'var(--danger)');
             return;
         }
-
         updateStatus('Verifying office location...', 'orange');
-
         if (!navigator.geolocation) {
             updateStatus('Geolocation is not supported by your browser.', 'var(--danger)');
             return;
         }
-
         navigator.geolocation.getCurrentPosition(
             (position) => {
                 const userLat = position.coords.latitude;
                 const userLon = position.coords.longitude;
                 const distance = getDistance(userLat, userLon, OFFICE_LAT, OFFICE_LON);
-
                 if (distance <= MAX_DISTANCE_METERS) {
                     sendToGoogleSheets(name, action);
                 } else {
@@ -145,32 +149,34 @@
             { enableHighAccuracy: true }
         );
     }
-
     function sendToGoogleSheets(name, action) {
         updateStatus('Recording to dashboard...', 'orange');
-        
+        const deviceId = getDeviceId();
+
         fetch(WEB_APP_URL, {
             method: 'POST',
-            mode: 'no-cors', // Solves cross-origin restriction for simple text streams
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: name, action: action })
+            body: JSON.stringify({ name: name, action: action, deviceId: deviceId })
         })
-        .then(() => {
-            updateStatus(`Success! ${action} recorded.`, 'var(--success)');
-            document.getElementById('employeeSelect').value = "";
+        .then(res => res.json())
+        .then(result => {
+            if (result.status === 'error') {
+                updateStatus(result.message || 'Submission rejected.', 'var(--danger)');
+            } else {
+                updateStatus(`Success! ${action} recorded.`, 'var(--success)');
+                document.getElementById('employeeSelect').value = "";
+            }
         })
         .catch(err => {
             updateStatus('Submission failed. Try again.', 'var(--danger)');
             console.error(err);
         });
     }
-
     function updateStatus(text, color) {
         const msgDiv = document.getElementById('statusMessage');
         msgDiv.innerText = text;
         msgDiv.style.color = color;
     }
-
     // Admin Panel logic
     function checkPasscode() {
         const code = document.getElementById('passcode').value;
@@ -182,11 +188,9 @@
             alert('Incorrect passcode!');
         }
     }
-
     function fetchLogs() {
         const tableBody = document.getElementById('logTableBody');
         tableBody.innerHTML = "<tr><td colspan='3'>Loading database logs...</td></tr>";
-
         fetch(WEB_APP_URL)
         .then(res => res.json())
         .then(data => {
